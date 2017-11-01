@@ -1,0 +1,159 @@
+#!/usr/bin/python
+
+ANSIBLE_METADATA = {
+    'metadata_version': '1.1',
+    'status': ['preview'],
+    'supported_by': 'community'
+}
+
+DOCUMENTATION = '''
+---
+module: sysrc
+
+short_description: Module for FreeBSD sysrc
+
+version_added: "2.4"
+
+description:
+    - "This is module for setup system variables on FreeBSD >=9.2 with sysrc command"
+
+options:
+    name:
+        description:
+            - Variable name.
+        required: true
+    value:
+        description:
+            - Value of the variable. Required if C(state=present).
+        required: false
+        default: null
+    state:
+        description:
+            - Whether to ensure that the variable is present or absent.
+        required: false
+        default: present
+        choices: [ "present", "absent" ]
+    file:
+        description:
+            - Operate on specified file.
+        required: false
+        default: 'rc_conf_files' entry
+    jail:
+        description:
+            - Name or jid of the jail to operate within.
+        required: false
+        default: null
+    root:
+        description:
+            - Work with tree on "dir".
+        required: false
+        default: "/"
+
+
+extends_documentation_fragment:
+    - system
+
+author:
+    - Alexander Galato (@alet)
+'''
+
+EXAMPLES = '''
+# Assign value
+- name: Make hostname be equial "gateway"
+  sysrc:
+    name: hostname
+    value: gateway
+
+# Make the same in jail "test"
+- name: Make hostname be equial "gateway"
+  sysrc:
+    name: hostname
+    value: gateway
+    jail: test
+
+# Remove variable from config file
+- name: Remove ifconfig_tap0
+  sysrc:
+    name: ifconfig_tap0
+    state: absent
+'''
+
+from ansible.module_utils.basic import AnsibleModule
+
+def test_var(module, sysrc_path, sysrc_arg):
+    sysrc_arg += " -c"
+    rc, out, err  = module.run_command("%s %s %s" % (sysrc_path, sysrc_arg, module.params["name"]))
+    if rc != 0:
+        return False
+
+    return True
+
+def query_var(module, sysrc_path, sysrc_arg):
+    sysrc_arg += " -n"
+    rc, out, err  = module.run_command("%s %s %s" % (sysrc_path, sysrc_arg, module.params["name"]))
+    if rc != 0:
+        return False
+
+    if out.rstrip() != module.params["value"]:
+        return False
+
+    return True
+
+
+def set_value(module, sysrc_path, sysrc_arg):
+    if query_var(module, sysrc_path, sysrc_arg):
+        return (False, "The variable already set in value %s" % module.params["value"])
+    rc, out, err = module.run_command("%s %s %s=%s" % (sysrc_path, sysrc_arg, module.params["name"], module.params["value"]))
+    if rc != 0:
+        module.fail_json(msg="Could not set variable")
+
+    return (True, "Variable was set")
+
+def remove_value(module, sysrc_path, sysrc_arg):
+    if test_var(module, sysrc_path, sysrc_arg):
+        sysrc_arg += " -x"
+        rc, out, err = module.run_command("%s %s %s" % (sysrc_path, sysrc_arg, module.params["name"]))
+        if rc == 0:
+            return (True, "Variable was removed")
+
+    return (False, "Variable was not removed")
+
+def main():
+    module_args = dict(
+        name=dict(type='str', required=True),
+        value=dict(type='str', required=False, default=''),
+        state=dict(type='str', required=False, default='present', choises=["present", "absent"]),
+        file=dict(type='str', required=False, default=''),
+        jail=dict(type='str', required=False, default=''),
+        root=dict(type='path', required=False, defaut='')
+    )
+
+    module = AnsibleModule(
+        argument_spec = module_args,
+        supports_check_mode = True,
+        mutually_exclusive = [["jail", "root"]]
+    )
+
+    sysrc_path = module.get_bin_path('sysrc', True)
+    p = module.params
+
+    changed = False
+    message = ''
+    sysrc_arg = ""
+
+    if p["root"] != None :
+        sysrc_arg += " -R %s" % (p["root"])
+    if p["jail"] != "":
+        sysrc_arg += " -j %s" % (p["jail"])
+    if p["file"] != "":
+        sysrc_arg += " -f %s" % (p["file"])
+
+    if p["state"] == "present":
+        changed, msg = set_value(module, sysrc_path, sysrc_arg)
+    elif p["state"] == "absent":
+        changed, msg = remove_value(module, sysrc_path, sysrc_arg)
+
+    module.exit_json(changed=changed, msg=', '.join(message))
+
+if __name__ == '__main__':
+    main()
