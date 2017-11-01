@@ -103,7 +103,7 @@ def query_var(module, sysrc_path, sysrc_arg):
 def set_value(module, sysrc_path, sysrc_arg):
     if query_var(module, sysrc_path, sysrc_arg):
         return (False, "The variable already set in value %s" % module.params["value"])
-    rc, out, err = module.run_command("%s %s %s=%s" % (sysrc_path, sysrc_arg, module.params["name"], module.params["value"]))
+    rc, out, err = module.run_command("%s %s %s=\"%s\"" % (sysrc_path, sysrc_arg, module.params["name"], module.params["value"]))
     if rc != 0:
         module.fail_json(msg="Could not set variable")
 
